@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Text‑to‑Speech Downloader</title>
+
+    <!-- Tailwind (fine for quick demos; switch to a local build for production) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- meSpeak.js (use jsDelivr because it returns CORS headers) -->
+    <script src="https://cdn.jsdelivr.net/npm/mespeak@2.0.2/mespeak.min.js"></script>
+  </head>
+  <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+    <main class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-xl space-y-4">
+      <h1 class="text-3xl font-bold text-center">Text‑to‑Speech Downloader</h1>
+
+      <!-- Text input -->
+      <textarea
+        id="text"
+        class="w-full border rounded p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        rows="5"
+        placeholder="Type or paste text here…"
+      ></textarea>
+
+      <!-- Filename input -->
+      <input
+        id="filename"
+        type="text"
+        class="w-full border rounded p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        placeholder="File name (without extension), e.g. greeting"
+      />
+
+      <!-- Generate button -->
+      <button
+        id="generate"
+        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-2xl transition ease-in-out duration-150 disabled:opacity-50"
+        disabled
+      >
+        Generate &amp; Download
+      </button>
+
+      <!-- Status message -->
+      <p id="status" class="text-sm text-gray-600 text-center"></p>
+    </main>
+
+    <script>
+      /* ---------------------------------------------------------------------
+       * 1. Load meSpeak assets (config + voice) once, then enable the button.
+       *    We now pull them from jsDelivr, which includes the CORS header
+       *    "Access-Control-Allow-Origin: *" so it works from file:// or localhost.
+       * 2. Use the async callback form of meSpeak.speak() (required in v2).
+       * 3. Show helpful status / error messages.
+       * -------------------------------------------------------------------*/
+
+      const statusEl   = document.getElementById('status');
+      const textEl     = document.getElementById('text');
+      const fileEl     = document.getElementById('filename');
+      const buttonEl   = document.getElementById('generate');
+
+      let ready = false;
+
+      async function loadMeSpeak() {
+        try {
+          statusEl.textContent = 'Loading voice…';
+
+          const base = 'https://cdn.jsdelivr.net/npm/mespeak@2.0.2';
+          const [cfg, voice] = await Promise.all([
+            fetch(`${base}/mespeak_config.json`).then(r => r.json()),
+            fetch(`${base}/voices/en/en.json`).then(r => r.json()),
+          ]);
+
+          meSpeak.loadConfig(cfg);
+          meSpeak.loadVoice(voice);
+
+          ready = true;
+          statusEl.textContent = 'Ready! Type some text and click Generate.';
+          buttonEl.disabled = false;
+        } catch (err) {
+          console.error('meSpeak asset load failed:', err);
+          statusEl.textContent = `⚠️ Could not load voice files (CORS/network).\nTip: if you opened this file directly from disk, try running a local server:\n• npx serve\n• python -m http.server`;
+        }
+      }
+
+      loadMeSpeak();
+
+      buttonEl.addEventListener('click', () => {
+        if (!ready) {
+          alert('Voice is still loading. Please wait…');
+          return;
+        }
+
+        const text = textEl.value.trim();
+        if (!text) {
+          alert('Please enter some text first.');
+          return;
+        }
+
+        const stem = (fileEl.value.trim() || 'tts') + '.wav';
+        statusEl.textContent = 'Generating speech…';
+
+        meSpeak.speak(
+          text,
+          {
+            amplitude: 100,
+            wordgap : 0,
+            pitch   : 50,
+            speed   : 175,
+            rawdata : 'data-url',
+          },
+          function (success, _id, wavDataUrl) {
+            if (!success) {
+              statusEl.textContent = '⚠️ Failed to generate speech.';
+              return;
+            }
+
+            const link = document.createElement('a');
+            link.href = wavDataUrl;
+            link.download = stem;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            statusEl.textContent = 'Download started!';
+          }
+        );
+      });
+    </script>
+  </body>
+</html>
