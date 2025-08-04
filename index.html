@@ -5,14 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Text‑to‑Speech Downloader</title>
 
-    <!-- Tailwind (demo‑only; switch to a build pipeline for production) -->
+    <!-- Tailwind (demo‑only; ignore CDN warning) -->
     <script src="https://cdn.tailwindcss.com"></script>
 
-    <!-- meSpeak v1.9.6 (the last version that ships a browser‑ready build) -->
-    <script
-      src="https://cdn.jsdelivr.net/npm/mespeak@1.9.6/mespeak.min.js"
-      defer
-    ></script>
+    <!-- meSpeak v1.9.6 (browser‑ready build) -->
+    <script src="https://cdn.jsdelivr.net/npm/mespeak@1.9.6/mespeak.min.js"></script>
   </head>
   <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
     <main class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-xl space-y-4">
@@ -48,44 +45,41 @@
     </main>
 
     <script>
-      // Wait until the DOM *and* meSpeak.js have both finished loading.
-      window.addEventListener('DOMContentLoaded', async () => {
-        await waitForMeSpeak();
-        initTTS();
-      });
+      // Run after both HTML and meSpeak have loaded
+      window.addEventListener('load', init);
 
-      function waitForMeSpeak() {
-        return new Promise((resolve, reject) => {
-          // If the global appeared quickly, resolve immediately.
-          if (window.meSpeak) return resolve();
-
-          // Otherwise poll for up to 5 s.
-          const start = Date.now();
-          const id = setInterval(() => {
-            if (window.meSpeak) {
-              clearInterval(id);
-              resolve();
-            } else if (Date.now() - start > 5000) {
-              clearInterval(id);
-              reject(new Error('meSpeak failed to load'));
-            }
-          }, 50);
-        });
-      }
-
-      async function initTTS() {
+      async function init() {
         const statusEl = document.getElementById('status');
         const textEl   = document.getElementById('text');
         const fileEl   = document.getElementById('filename');
         const btnEl    = document.getElementById('generate');
 
+        /* ----------------------------------------------------------
+         * 1. Load config from an **embedded** object — avoids CORS.
+         * 2. Fetch the English voice JSON with fetch() (CORS‑enabled).
+         * --------------------------------------------------------*/
         try {
           statusEl.textContent = 'Loading voice…';
 
-          // Load built‑in config from CDN
-          await meSpeak.loadConfig('https://cdn.jsdelivr.net/npm/mespeak@1.9.6/mespeak_config.json');
-          // Load English voice (or switch to another locale file)
-          await meSpeak.loadVoice('https://cdn.jsdelivr.net/npm/mespeak@1.9.6/voices/en/en.json');
+          const configObj = {
+            // Tell meSpeak where voices live (we’ll fetch manually anyway)
+            voices: 'voices/',
+            audio: {
+              encoding : 'wav',
+              bits     : 16,
+              rate     : 22050,
+              channels : 1,
+              volume   : 1,
+            },
+            speed : 175,
+            pitch : 50,
+          };
+          meSpeak.loadConfig(configObj);
+
+          // Fetch voice JSON ourselves so we control CORS
+          const voiceUrl = 'https://cdn.jsdelivr.net/npm/mespeak@1.9.6/voices/en/en.json';
+          const voiceJson = await fetch(voiceUrl).then(r => r.json());
+          meSpeak.loadVoice(voiceJson);
 
           statusEl.textContent = 'Ready! Type some text and click Generate.';
           btnEl.disabled = false;
@@ -100,25 +94,29 @@
             const filename = (fileEl.value.trim() || 'tts') + '.wav';
             statusEl.textContent = 'Generating speech…';
 
-            meSpeak.speak(text, { rawdata: 'data-url' }, (success, _id, wavDataUrl) => {
-              if (!success) {
-                statusEl.textContent = '⚠️ Failed to generate speech.';
-                return;
+            meSpeak.speak(
+              text,
+              { rawdata: 'data-url' },
+              (success, _id, wavDataUrl) => {
+                if (!success) {
+                  statusEl.textContent = '⚠️ Failed to generate speech.';
+                  return;
+                }
+
+                const link = document.createElement('a');
+                link.href = wavDataUrl;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                statusEl.textContent = 'Download started!';
               }
-
-              const link = document.createElement('a');
-              link.href = wavDataUrl;
-              link.download = filename;
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-
-              statusEl.textContent = 'Download started!';
-            });
+            );
           });
-        } catch (e) {
-          console.error(e);
-          statusEl.textContent = '⚠️ Could not load meSpeak resources.';
+        } catch (err) {
+          console.error('TTS init error:', err);
+          statusEl.textContent = '⚠️ Could not load voice data (CORS or network error).';
         }
       }
     </script>
