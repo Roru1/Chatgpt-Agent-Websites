@@ -85,7 +85,9 @@
                 volume: 1
               }
             });
-            const { data: audioBlob } = await recorder.start();
+            const { data } = await recorder.start();
+            // data returned as an Array of chunks; combine into a Blob
+            const audioBlob = new Blob(data, { type: 'audio/wav' });
 
             // Trigger download
             const url = URL.createObjectURL(audioBlob);
