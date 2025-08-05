@@ -8,8 +8,8 @@
     <!-- Tailwind CSS (demo-only) -->
     <script src="https://cdn.tailwindcss.com"></script>
 
-    <!-- Artyom.js for TTS control -->
-    <script src="https://unpkg.com/artyom.js"></script>
+    <!-- Artyom.js browser build for TTS control -->
+    <script src="https://unpkg.com/artyom.js/build/artyom.window.min.js"></script>
     <!-- Recorder for capturing SpeechSynthesis output -->
     <script src="https://unpkg.com/speech-synthesis-recorder@1.2.1/SpeechSynthesisRecorder.js"></script>
   </head>
@@ -37,6 +37,13 @@
         const btn      = document.getElementById('generate');
         const textEl   = document.getElementById('text');
         const fileEl   = document.getElementById('filename');
+
+        // Check that Artyom is available
+        if (typeof Artyom === 'undefined') {
+          console.error('Artyom.js not loaded');
+          statusEl.textContent = '⚠️ Artyom.js failed to load.';
+          return;
+        }
 
         // Initialize Artyom
         const artyom = new Artyom();
@@ -67,11 +74,12 @@
           statusEl.textContent = 'Generating speech…';
 
           try {
-            // Use SpeechSynthesisRecorder to capture the output of the browser TTS
+            // Capture output via SpeechSynthesisRecorder, using Artyom to speak
             const recorder = new SpeechSynthesisRecorder({
               text,
+              // Artyom handles speak, but recorder triggers speechSynthesis itself
               utteranceOptions: {
-                lang: 'en-GB',  // should match Artyom.lang
+                lang: 'en-GB',
                 rate: 1,
                 pitch: 1,
                 volume: 1
