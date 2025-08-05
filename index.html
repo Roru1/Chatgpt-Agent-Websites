@@ -3,107 +3,88 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Text-to-Speech Downloader with Artyom.js</title>
+    <title>eSpeak.js Text-to-Speech Downloader</title>
 
-    <!-- Tailwind CSS (demo-only) -->
+    <!-- Tailwind CSS for styling (demo-only) -->
     <script src="https://cdn.tailwindcss.com"></script>
 
-    <!-- Artyom.js browser build for TTS control -->
-    <script src="https://unpkg.com/artyom.js/build/artyom.window.min.js"></script>
-    <!-- Recorder for capturing SpeechSynthesis output -->
-    <script src="https://unpkg.com/speech-synthesis-recorder@1.2.1/SpeechSynthesisRecorder.js"></script>
+    <!-- meSpeak.js (eSpeak port) -->
+    <script src="https://cdn.jsdelivr.net/npm/mespeak@1.0.0/mespeak.min.js"></script>
   </head>
   <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
-    <main class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-lg space-y-4">
-      <h1 class="text-2xl font-bold text-center">Text-to-Speech Downloader</h1>
+    <main class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-xl space-y-4">
+      <h1 class="text-3xl font-bold text-center">eSpeak.js Text-to-Speech</h1>
+      <p class="text-sm text-gray-500 text-center">Using the eSpeak engine compiled to JavaScript ([albertopettarin.it](https://www.albertopettarin.it/blog/2016/11/13/make-your-web-page-talk-with-espeakng-js.html))</p>
 
-      <!-- Status message -->
-      <p id="status" class="text-sm text-gray-600 text-center">Loading voice engine…</p>
+      <!-- Input Form -->
+      <textarea
+        id="text"
+        rows="5"
+        class="w-full border rounded p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        placeholder="Type your text here…"
+      ></textarea>
+      <input
+        id="filename"
+        type="text"
+        class="w-full border rounded p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        placeholder="Filename (no extension)"
+      />
+      <button
+        id="generate"
+        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-2xl disabled:opacity-50"
+        disabled
+      >Generate & Download WAV</button>
 
-      <!-- TTS form -->
-      <div id="ttsForm" class="hidden space-y-2">
-        <textarea id="text" rows="5" placeholder="Type text here…" class="w-full border rounded p-2"></textarea>
-        <input id="filename" type="text" placeholder="File name (no extension)" class="w-full border rounded p-2" />
-        <button id="generate" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded">
-          Generate &amp; Download
-        </button>
-      </div>
+      <!-- Status -->
+      <p id="status" class="text-sm text-gray-600 text-center">Loading eSpeak engine…</p>
     </main>
 
     <script>
-      window.addEventListener('load', async () => {
+      window.addEventListener('load', () => {
         const statusEl = document.getElementById('status');
-        const formEl   = document.getElementById('ttsForm');
         const btn      = document.getElementById('generate');
         const textEl   = document.getElementById('text');
         const fileEl   = document.getElementById('filename');
 
-        // Check that Artyom is available
-        if (typeof Artyom === 'undefined') {
-          console.error('Artyom.js not loaded');
-          statusEl.textContent = '⚠️ Artyom.js failed to load.';
-          return;
-        }
+        // 1. Load eSpeak config & voice
+        meSpeak.loadConfig('https://cdn.jsdelivr.net/npm/mespeak@1.0.0/mespeak_config.json');
+        meSpeak.loadVoice('https://cdn.jsdelivr.net/npm/mespeak@1.0.0/voices/en/en.json');
 
-        // Initialize Artyom
-        const artyom = new Artyom();
-        try {
-          await artyom.initialize({
-            lang: 'en-GB',       // change locale if needed
-            continuous: false,
-            debug: false,
-            listen: false
+        // 2. Wait until eSpeak is ready
+        const waitForReady = setInterval(() => {
+          if (meSpeak.isConfigLoaded && meSpeak.isVoiceLoaded) {
+            clearInterval(waitForReady);
+            statusEl.textContent = 'Ready! Enter text and click Generate.';
+            btn.disabled = false;
+          }
+        }, 50);
+
+        // 3. Generate & download
+        btn.addEventListener('click', () => {
+          const txt = textEl.value.trim();
+          if (!txt) return alert('Please enter some text.');
+
+          const stem = (fileEl.value.trim() || 'tts') + '.wav';
+          statusEl.textContent = 'Synthesizing…';
+
+          // meSpeak returns a data-url containing WAV data ([masswerk.at](https://www.masswerk.at/mespeak/?utm_source=chatgpt.com))
+          const wavURI = meSpeak.speak(txt, {
+            amplitude: 100,
+            wordgap   : 0,
+            pitch     : 50,
+            speed     : 175,
+            rawdata   : 'data-url'
           });
-        } catch (err) {
-          console.error('Artyom init error:', err);
-          statusEl.textContent = '⚠️ Could not initialize Artyom.js.';
-          return;
-        }
 
-        // Ready
-        statusEl.textContent = 'Ready! Enter text below.';
-        formEl.classList.remove('hidden');
+          // Trigger download
+          const link = document.createElement('a');
+          link.href = wavURI;
+          link.download = stem;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
 
-        btn.addEventListener('click', async () => {
-          const text = textEl.value.trim();
-          if (!text) {
-            alert('Please enter some text.');
-            return;
-          }
-          const filename = (fileEl.value.trim() || 'tts') + '.wav';
-          statusEl.textContent = 'Generating speech…';
-
-          try {
-            // Capture output via SpeechSynthesisRecorder, using Artyom to speak
-            const recorder = new SpeechSynthesisRecorder({
-              text,
-              // Artyom handles speak, but recorder triggers speechSynthesis itself
-              utteranceOptions: {
-                lang: 'en-GB',
-                rate: 1,
-                pitch: 1,
-                volume: 1
-              }
-            });
-            const { data } = await recorder.start();
-            // data returned as an Array of chunks; combine into a Blob
-            const audioBlob = new Blob(data, { type: 'audio/wav' });
-
-            // Trigger download
-            const url = URL.createObjectURL(audioBlob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-
-            statusEl.textContent = 'Download started!';
-          } catch (err) {
-            console.error('TTS error:', err);
-            statusEl.textContent = `⚠️ Error: ${err.message || err}`;
-          }
+          statusEl.textContent = 'Download started!';
         });
       });
     </script>
