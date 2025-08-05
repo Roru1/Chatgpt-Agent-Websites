@@ -3,31 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Text-to-Speech Downloader & Library Cache</title>
+    <title>Text-to-Speech Downloader with Artyom.js</title>
 
     <!-- Tailwind CSS (demo-only) -->
     <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Artyom.js for TTS control -->
+    <script src="https://unpkg.com/artyom.js"></script>
+    <!-- Recorder for capturing SpeechSynthesis output -->
+    <script src="https://unpkg.com/speech-synthesis-recorder@1.2.1/SpeechSynthesisRecorder.js"></script>
   </head>
   <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
-    <main class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-xl space-y-4">
-      <h1 class="text-3xl font-bold text-center">TTS Downloader & Library Cache</h1>
+    <main class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-lg space-y-4">
+      <h1 class="text-2xl font-bold text-center">Text-to-Speech Downloader</h1>
 
-      <!-- Status -->
-      <p id="status" class="text-sm text-gray-600 text-center">Initializing…</p>
+      <!-- Status message -->
+      <p id="status" class="text-sm text-gray-600 text-center">Loading voice engine…</p>
 
-      <!-- GitHub Settings -->
-      <div id="configForm" class="space-y-2">
-        <p class="font-medium">GitHub Repository Settings</p>
-        <input id="ghToken" type="password" placeholder="Personal Access Token" class="w-full border rounded p-2" />
-        <input id="ghOwner" type="text" placeholder="Owner (e.g. roru1)" value="" class="w-full border rounded p-2" />
-        <input id="ghRepo" type="text" placeholder="Repo (e.g. Chatgpt-Agent-Websites)" value="" class="w-full border rounded p-2" />
-        <input id="ghBranch" type="text" placeholder="Branch (e.g. main)" value="" class="w-full border rounded p-2" />
-        <button id="configSave" class="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded">
-          Save Configuration
-        </button>
-      </div>
-
-      <!-- TTS Controls -->
+      <!-- TTS form -->
       <div id="ttsForm" class="hidden space-y-2">
         <textarea id="text" rows="5" placeholder="Type text here…" class="w-full border rounded p-2"></textarea>
         <input id="filename" type="text" placeholder="File name (no extension)" class="w-full border rounded p-2" />
@@ -38,118 +31,71 @@
     </main>
 
     <script>
-      (async () => {
-        const statusEl   = document.getElementById('status');
-        const configForm = document.getElementById('configForm');
-        const ttsForm    = document.getElementById('ttsForm');
-        const btnSave    = document.getElementById('configSave');
-        const btnGen     = document.getElementById('generate');
-        const textEl     = document.getElementById('text');
-        const fileEl     = document.getElementById('filename');
+      window.addEventListener('load', async () => {
+        const statusEl = document.getElementById('status');
+        const formEl   = document.getElementById('ttsForm');
+        const btn      = document.getElementById('generate');
+        const textEl   = document.getElementById('text');
+        const fileEl   = document.getElementById('filename');
 
-        let token, owner, repo, branch;
-        const saveConfig = cfg => localStorage.setItem('ttsRepoConfig', JSON.stringify(cfg));
-        const loadConfig = () => JSON.parse(localStorage.getItem('ttsRepoConfig') || '{}');
-
-        // On load, check if config saved
-        const cfg = loadConfig();
-        if (cfg.token) {
-          ({ token, owner, repo, branch } = cfg);
-          configForm.classList.add('hidden');
-          await ensureLibraryCached();
-          ttsForm.classList.remove('hidden');
+        // Initialize Artyom
+        const artyom = new Artyom();
+        try {
+          await artyom.initialize({
+            lang: 'en-GB',       // change locale if needed
+            continuous: false,
+            debug: false,
+            listen: false
+          });
+        } catch (err) {
+          console.error('Artyom init error:', err);
+          statusEl.textContent = '⚠️ Could not initialize Artyom.js.';
+          return;
         }
 
-        btnSave.addEventListener('click', async () => {
-          token  = document.getElementById('ghToken').value.trim();
-          owner  = document.getElementById('ghOwner').value.trim();
-          repo   = document.getElementById('ghRepo').value.trim();
-          branch = document.getElementById('ghBranch').value.trim();
-          if (!token||!owner||!repo||!branch) return alert('All fields required');
-          saveConfig({ token, owner, repo, branch });
-          configForm.classList.add('hidden');
-          await ensureLibraryCached();
-          ttsForm.classList.remove('hidden');
-        });
+        // Ready
+        statusEl.textContent = 'Ready! Enter text below.';
+        formEl.classList.remove('hidden');
 
-        async function ensureLibraryCached() {
-          statusEl.textContent = 'Checking/configuring TTS library…';
-          const baseRaw = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}`;
-          // Paths
-          const paths = [
-            'mespeak_config.json',
-            'mespeak.min.js',
-            'voices/en/en.json'
-          ];
-          // CDN URLs
-          const cdnBase = 'https://cdn.jsdelivr.net/npm/mespeak@1.9.6';
-
-          for (const p of paths) {
-            const rawUrl = `${baseRaw}/${p}`;
-            let exists = false;
-            try {
-              const r = await fetch(rawUrl, { method: 'HEAD' });
-              exists = r.ok;
-            } catch {}
-            if (!exists) {
-              statusEl.textContent = `Caching ${p} to repo…`;
-              // Fetch via CDN
-              const srcUrl = (p.startsWith('voices/') || p === 'mespeak.min.js')
-                ? `${cdnBase}/${p}`
-                : `${cdnBase}/${p}`;
-              const data = await fetch(srcUrl).then(r => r.arrayBuffer());
-              const b64   = btoa(String.fromCharCode(...new Uint8Array(data)));
-              // Upload
-              const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${p}`;
-              const body = { message: `Add ${p}`, content: b64, branch };
-              const res = await fetch(apiUrl, {
-                method: 'PUT',
-                headers: {
-                  'Authorization': `token ${token}`,
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(body)
-              });
-              if (!res.ok) {
-                const err = await res.json();
-                throw new Error(`Failed to cache ${p}: ${err.message}`);
-              }
-            }
+        btn.addEventListener('click', async () => {
+          const text = textEl.value.trim();
+          if (!text) {
+            alert('Please enter some text.');
+            return;
           }
+          const filename = (fileEl.value.trim() || 'tts') + '.wav';
+          statusEl.textContent = 'Generating speech…';
 
-          statusEl.textContent = 'Loading TTS engine…';
-          // Dynamically load local scripts
-          const script = document.createElement('script');
-          script.src = 'mespeak.min.js';
-          script.onload = () => initTTS();
-          document.head.appendChild(script);
-        }
-
-        function initTTS() {
-          statusEl.textContent = 'Initializing TTS…';
-          meSpeak.loadConfig('mespeak_config.json', cfgOk => {
-            if (!cfgOk) return statusEl.textContent = 'Config load failed';
-            meSpeak.loadVoice('voices/en/en.json', voiceOk => {
-              if (!voiceOk) return statusEl.textContent = 'Voice load failed';
-              statusEl.textContent = 'Ready!';
-              setupGenerate();
+          try {
+            // Use SpeechSynthesisRecorder to capture the output of the browser TTS
+            const recorder = new SpeechSynthesisRecorder({
+              text,
+              utteranceOptions: {
+                lang: 'en-GB',  // should match Artyom.lang
+                rate: 1,
+                pitch: 1,
+                volume: 1
+              }
             });
-          });
-        }
+            const { data: audioBlob } = await recorder.start();
 
-        function setupGenerate() {
-          btnGen.addEventListener('click', () => {
-            const text = textEl.value.trim();
-            if (!text) return alert('Enter text');
-            const filename = (fileEl.value.trim()||'tts') + '.wav';
-            statusEl.textContent = 'Generating…';
-            const wav = meSpeak.speak(text,{rawdata:'data-url'});
-            const a = document.createElement('a'); a.href=wav; a.download=filename;
-            document.body.appendChild(a); a.click(); document.body.removeChild(a);
-            statusEl.textContent = 'Done';
-          });
-        }
-      })();
+            // Trigger download
+            const url = URL.createObjectURL(audioBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            statusEl.textContent = 'Download started!';
+          } catch (err) {
+            console.error('TTS error:', err);
+            statusEl.textContent = `⚠️ Error: ${err.message || err}`;
+          }
+        });
+      });
     </script>
   </body>
 </html>
